@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Epub Transverter - 极简 ePUB 繁简转换</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- JSZip CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- OpenCC JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-900 min-h-screen flex flex-col justify-between antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- Header -->
+    <header class="max-w-4xl w-full mx-auto px-6 py-8 flex justify-between items-center">
+        <div class="flex items-center space-x-3">
+            <div class="h-8 w-8 bg-gradient-to-tr from-stone-700 to-stone-900 rounded-lg flex items-center justify-center font-bold text-sm tracking-wider text-white">CC</div>
+            <span class="text-sm font-medium tracking-wide text-stone-600">Epub Transverter</span>
+        </div>
+        <div class="text-xs text-stone-600 bg-stone-100 px-3 py-1.5 rounded-full border border-stone-200/60 flex items-center gap-2">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            100% 本地处理 · 隐私安全
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-xl w-full mx-auto px-6 flex-1 flex flex-col justify-center py-12">
+        <div class="text-center mb-10">
+            <h1 class="text-3xl font-light tracking-tight mb-4 text-stone-800">无损、高效、纯净</h1>
+            <p class="text-sm text-stone-500 max-w-sm mx-auto leading-relaxed">
+                文件不在服务器留存<br>瞬间完成转换并自动下载
+            </p>
+        </div>
+
+        <!-- Dropzone Container -->
+        <div class="bg-white border border-stone-200 rounded-2xl p-2 shadow-sm shadow-stone-200/50">
+            <div id="dropzone" class="border-2 border-dashed border-stone-200 hover:border-stone-300 hover:bg-stone-50/50 active:border-stone-400 transition-all duration-300 rounded-xl p-10 flex flex-col items-center justify-center cursor-pointer group">
+                <input type="file" id="fileInput" accept=".epub" class="hidden" />
+                
+                <!-- Icon State 1: Default -->
+                <div id="icon-upload" class="h-12 w-12 rounded-full bg-stone-50 border border-stone-200 flex items-center justify-center text-stone-500 group-hover:text-stone-700 group-hover:scale-105 transition-all duration-300 mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                    </svg>
+                </div>
+
+                <!-- Icon State 2: Processing (Hidden by default) -->
+                <div id="icon-loading" class="hidden h-12 w-12 items-center justify-center text-stone-700 mb-4">
+                    <svg class="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+
+                <p id="status-title" class="text-sm font-medium text-stone-700 group-hover:text-stone-900 transition-colors">点击或将 ePUB 文件拖拽至此</p>
+                <p id="status-desc" class="text-xs text-stone-400 mt-1">支持标准 ePUB 格式书籍</p>
+            </div>
+        </div>
+
+        <!-- Notification Toast (Hidden by default) -->
+        <div id="toast" class="opacity-0 translate-y-2 pointer-events-none transition-all duration-300 mt-4 px-4 py-3 rounded-xl bg-red-50 border border-red-100 text-red-600 text-xs text-center">
+            错误提示
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="max-w-4xl w-full mx-auto px-6 py-6 text-center text-xs text-stone-400 tracking-wide border-t border-stone-200/40">
+        &copy; 2026 Epub Transverter. Designed with elite simplicity.
+    </footer>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const iconUpload = document.getElementById('icon-upload');
+        const iconLoading = document.getElementById('icon-loading');
+        const statusTitle = document.getElementById('status-title');
+        const statusDesc = document.getElementById('status-desc');
+        const toast = document.getElementById('toast');
+
+        const converter = OpenCC.Converter({ from: 'hk', to: 'cn' });
+
+        // 现代精英化的高端全平台中文排版样式重置包
+        const customCSS = `
+            @charset "utf-8";
+            html, body, p, div, span, h1, h2, h3, h4, h5, h6 {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans CJK SC", "Microsoft YaHei", sans-serif !important;
+                line-height: 1.625 !important;
+            }
+        `;
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('border-stone-400', 'bg-stone-50/50');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('border-stone-400', 'bg-stone-50/50');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('border-stone-400', 'bg-stone-50/50');
+            if (e.dataTransfer.files.length > 0) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function showToast(message) {
+            toast.innerText = message;
+            toast.classList.remove('opacity-0', 'translate-y-2', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2', 'pointer-events-none');
+            }, 4000);
+        }
+
+        async function handleFile(file) {
+            if (!file.name.endsWith('.epub')) {
+                showToast('非标准格式：请上传以 .epub 结尾的文件。');
+                return;
+            }
+
+            iconUpload.classList.add('hidden');
+            iconLoading.classList.remove('hidden');
+            iconLoading.classList.add('flex');
+            statusTitle.innerText = '正在本地解析并无损转换...';
+            statusDesc.innerText = '大文件可能需要几秒钟，请勿关闭页面';
+            dropzone.style.pointerEvents = 'none';
+
+            try {
+                const zip = new JSZip();
+                const loadedZip = await zip.loadAsync(file);
+                let hasTextFiles = false;
+
+                // 核心修改逻辑
+                for (const [relativePath, zipEntry] of Object.entries(loadedZip.files)) {
+                    if (zipEntry.dir) continue;
+
+                    const isText = relativePath.endsWith('.html') || 
+                                   relativePath.endsWith('.xhtml') || 
+                                   relativePath.endsWith('.ncx') || 
+                                   relativePath.endsWith('.opf');
+
+                    // 拦截原电子书里的内部 CSS 文件，直接清空重置为现代简体排版样式
+                    const isStyle = relativePath.endsWith('.css');
+
+                    if (isText) {
+                        hasTextFiles = true;
+                        let originalText = await zipEntry.async('string');
+                        
+                        // 在每个页面的 <head> 标签结束前，强行注入最高优先级的极简现代排版样式
+                        if (relativePath.endsWith('.html') || relativePath.endsWith('.xhtml')) {
+                            const styleTag = `<style>${customCSS}</style></head>`;
+                            originalText = originalText.replace(/<\/head>/i, styleTag);
+                        }
+
+                        const convertedText = converter(originalText);
+                        zip.file(relativePath, convertedText);
+                    } else if (isStyle) {
+                        // 覆盖书籍原本可能存在的、导致乱码的繁体样式文件
+                        zip.file(relativePath, customCSS);
+                    }
+                }
+
+                if (!hasTextFiles) {
+                    throw new Error('未能识别合法的 ePUB 文本结构，文件可能已加密或损坏。');
+                }
+
+                statusTitle.innerText = '正在重新封装高品质 ePUB...';
+                const outputBlob = await zip.generateAsync({ 
+                    type: 'blob',
+                    mimeType: 'application/epub+zip'
+                });
+
+                const downloadUrl = URL.createObjectURL(outputBlob);
+                const downloadLink = document.createElement('a');
+                
+                const originalName = file.name.substring(0, file.name.lastIndexOf('.'));
+                const simplifiedName = converter(originalName); 
+                
+                downloadLink.href = downloadUrl;
+                downloadLink.download = `${simplifiedName}_[简体].epub`;
+                
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+                
+                URL.revokeObjectURL(downloadUrl);
+
+                statusTitle.innerText = '转换成功！已自动触发下载';
+                statusDesc.innerText = '可以继续拖拽下一个文件进行转换';
+
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || '转换失败，文件可能存在加密(DRM)保护。');
+                statusTitle.innerText = '点击或将 ePUB 文件拖拽至此';
+                statusDesc.innerText = '支持标准 ePUB 格式书籍';
+            } finally {
+                iconLoading.classList.add('hidden');
+                iconLoading.classList.remove('flex');
+                iconUpload.classList.remove('hidden');
+                dropzone.style.pointerEvents = 'auto';
+            }
+        }
+    </script>
+</body>
+</html>
